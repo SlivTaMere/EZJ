@@ -24,6 +24,12 @@ public class Seat implements IEZJSerializable
 	{
 		this.color = color;
 	}
+	@Override
+	public String toString()
+	{
+		return "Seat in "+color+" "+material;
+	}
+	
 	
 	
 }

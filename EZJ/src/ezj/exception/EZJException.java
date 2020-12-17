@@ -7,5 +7,10 @@ public class EZJException extends Exception
 	{
 		super(string);
 	}
+	
+	public EZJException(String string, Throwable cause)
+	{
+		super(string, cause);
+	}
 
 }

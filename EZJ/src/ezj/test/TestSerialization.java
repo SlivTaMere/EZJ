@@ -3,6 +3,7 @@ package ezj.test;
 import java.awt.Color;
 import java.util.ArrayList;
 
+import javax.json.JsonArray;
 import javax.json.JsonObject;
 
 import ezj.EZJ;
@@ -75,7 +76,8 @@ public class TestSerialization
 	{
 		Car c = TestSerialization.createTestObject();
 		EZJ.addCustomSerializer(new ColorSerializer(), Color.class);
-		JsonObject jsonrepr = EZJ.serializeOuter(c);
+		JsonObject jsonrepr = EZJ.serialize(c);
+		JsonArray jsona = EZJ.serialize(c.getWheels());
 		System.out.println(jsonrepr);
 	}
 	

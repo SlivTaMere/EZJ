@@ -23,7 +23,7 @@ public class ColorSerializer implements IEZJCustomSerializer<Color>
 	}
 
 	@Override
-	public Color unserialize(JsonValue value)
+	public Color deserialize(JsonValue value)
 	{
 		JsonObject obj = (JsonObject) value;
 		return new Color(obj.getInt("r"), obj.getInt("g"),obj.getInt("b"));
