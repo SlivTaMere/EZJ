@@ -46,6 +46,16 @@ public class Car implements IEZJSerializable
 		this.interior = interior;
 	}
 	
+	@Override
+	public String toString()
+	{
+		String s = ""+color+" "+body+" car with a "+engine+"\n\tInterior: "+interior+"\n\tWheels:";
+		for(Wheel w : wheels)
+		{
+			s+="\n\t"+w;
+		}
+		return s;
+	}
 	
 	
 }

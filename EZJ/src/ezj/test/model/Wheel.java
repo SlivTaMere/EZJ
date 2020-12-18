@@ -25,4 +25,8 @@ public class Wheel implements IEZJSerializable
 		this.color = color;
 	}
 	
+	public String toString()
+	{
+		return ""+color+" in "+material;
+	}
 }

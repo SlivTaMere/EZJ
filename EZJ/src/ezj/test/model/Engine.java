@@ -42,5 +42,11 @@ public class Engine implements IEZJSerializable
 		this.turbo = turbo;
 	}
 	
+	@Override
+	public String toString()
+	{
+		return fuel+" "+displacement+"L "+numberOfCylinders+" cylinders "+(turbo?" with ":" without ")+" turbo.";
+	}
+	
 	
 }

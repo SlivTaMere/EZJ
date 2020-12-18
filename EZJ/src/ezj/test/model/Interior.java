@@ -1,5 +1,6 @@
 package ezj.test.model;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import ezj.IEZJSerializable;
@@ -7,7 +8,7 @@ import ezj.IEZJSerializable;
 public class Interior implements IEZJSerializable
 {
 	private String nonSeatMaterial;
-	private List<Seat> seats;
+	private ArrayList<Seat> seats;
 	
 	public String getNonSeatMaterial()
 	{
@@ -21,9 +22,21 @@ public class Interior implements IEZJSerializable
 	{
 		return seats;
 	}
-	public void setSeats(List<Seat> seats)
+	public void setSeats(ArrayList<Seat> seats)
 	{
 		this.seats = seats;
 	}
+	
+	@Override
+	public String toString()
+	{
+		String str = nonSeatMaterial;
+		for(Seat s : seats)
+		{
+			str += "\n\t"+s; 
+		}
+		return str;
+	}
+	
 	
 }

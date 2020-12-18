@@ -77,8 +77,11 @@ public class TestSerialization
 		Car c = TestSerialization.createTestObject();
 		EZJ.addCustomSerializer(new ColorSerializer(), Color.class);
 		JsonObject jsonrepr = EZJ.serialize(c);
-		JsonArray jsona = EZJ.serialize(c.getWheels());
-		System.out.println(jsonrepr);
+		
+		Car c2 = EZJ.deserialize(jsonrepr, Car.class);
+		
+		System.out.println(c2.toString().equals(c.toString()));
+		System.out.println(c2);
 	}
 	
 }

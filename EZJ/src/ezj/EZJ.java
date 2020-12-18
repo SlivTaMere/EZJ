@@ -1,5 +1,7 @@
 package ezj;
 
+import java.awt.List;
+import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -10,23 +12,44 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 import javax.json.Json;
 import javax.json.JsonArray;
 import javax.json.JsonArrayBuilder;
+import javax.json.JsonNumber;
 import javax.json.JsonObject;
 import javax.json.JsonObjectBuilder;
+import javax.json.JsonString;
 import javax.json.JsonValue;
 import javax.json.JsonValue.ValueType;
 
 import ezj.exception.EZJDeserilizationError;
 import ezj.exception.EZJException;
 import ezj.exception.EZJInstantiationError;
-import ezj.exception.EZJNoFieldAccess;
+import ezj.exception.EZJNoFieldReadAccess;
+import ezj.exception.EZJNoFieldWriteAccess;
+import ezj.exception.EZJNotDeserializable;
 import ezj.exception.EZJNotSerializable;
 
 public class EZJ
 {
+	private static final Map<Class<?>, Class<?>> WRAPPER_TYPE_MAP;
+	static {
+	    WRAPPER_TYPE_MAP = new HashMap<Class<?>, Class<?>>();
+	    WRAPPER_TYPE_MAP.put(Integer.class, Integer.TYPE);
+	    WRAPPER_TYPE_MAP.put(Byte.class, Byte.TYPE);
+	    WRAPPER_TYPE_MAP.put(Character.class, Character.TYPE);
+	    WRAPPER_TYPE_MAP.put(Boolean.class, Boolean.TYPE);
+	    WRAPPER_TYPE_MAP.put(Double.class, Double.TYPE);
+	    WRAPPER_TYPE_MAP.put(Float.class, Float.TYPE);
+	    WRAPPER_TYPE_MAP.put(Long.class, Long.TYPE);
+	    WRAPPER_TYPE_MAP.put(Short.class, Short.TYPE);
+	    WRAPPER_TYPE_MAP.put(Void.class, Void.TYPE);
+	}
+	
 	static private HashMap<Class, IEZJCustomSerializer> customSerializers = new HashMap<Class, IEZJCustomSerializer>();
 	
 	static public void addCustomSerializer(IEZJCustomSerializer serial, Class c)
@@ -127,7 +150,7 @@ public class EZJ
 					}
 					if(method == null)
 					{
-						throw new EZJNoFieldAccess(object.getClass(), name);
+						throw new EZJNoFieldReadAccess(object.getClass(), name);
 						//continue;
 					}
 					
@@ -148,7 +171,7 @@ public class EZJ
 		return job.build();
 	}
 	
-	private static Collection deserializeCollection(JsonArray jArray, Field collectionField) throws EZJException
+	private static Collection deserializeToCollection(JsonArray jArray, Field collectionField) throws EZJException
 	{
 		try
 		{
@@ -157,11 +180,29 @@ public class EZJ
 				throw new EZJInstantiationError(collectionField.getType());
 			}
 			ParameterizedType tp = (ParameterizedType) collectionField.getGenericType();			
-			Class elementsClass = (Class) tp.getActualTypeArguments()[0];			
-			Collection i = (Collection) collectionField.getType().newInstance();			
+			Class elementsClass = (Class) tp.getActualTypeArguments()[0];	
+			
+			//Most of the time the field type will be the interface List or Set and we can't instantiate it.
+			//Let's use well known implementation of these two interfaces so the serialized class don't need to specified the exact type of the list.
+			//TODO, add a setting to change implementation used and add more interfaces/abstract classes supported.
+			
+			Collection i;
+			if(collectionField.getType().equals(List.class))
+			{
+				i = new ArrayList<>();
+			}
+			else if(collectionField.getType().equals(Set.class))
+			{
+				i = new HashSet<>();
+			}
+			else
+			{
+				i = (Collection) collectionField.getType().newInstance();
+			}
+			
 			for(JsonValue children : jArray)
 			{
-				i.add(fromJsonValue(children, null));
+				i.add(fromJsonValue(children, elementsClass));
 			}
 			
 			return i;
@@ -172,7 +213,36 @@ public class EZJ
 		}
 	}
 	
-	static public <T> T deserialize(JsonObject jObj, Class<T> c) throws EZJInstantiationError
+	private static Object[] deserializeToArray(JsonArray jArray, Field field) throws EZJException
+	{
+		if(!field.getType().isArray())
+		{
+			throw new EZJInstantiationError(field.getType());
+		}
+		
+		Class childrenClass = field.getType().getComponentType();
+		Object[] array = (Object[]) Array.newInstance(childrenClass, jArray.size());
+		
+		int i = 0;
+		for(JsonValue children : jArray)
+		{
+			array[i] = fromJsonValue(children, childrenClass);
+			i++;
+		}
+		
+		return array;
+	}
+	
+	static public <T> T deserialize(JsonObject jObj, Class<T> c) throws EZJException
+	{
+		if(jObj.containsKey(c.getSimpleName()))
+		{
+			return deserializeToObject(jObj.getJsonObject(c.getSimpleName()), c);
+		}
+		throw new EZJNotDeserializable(c, jObj);
+	}
+	
+	static private <T> T deserializeToObject(JsonObject jObj, Class<T> c) throws EZJException
 	{
 		T object = null;
 		try
@@ -183,61 +253,79 @@ public class EZJ
 		{
 			throw new EZJInstantiationError(c, e); 
 		}
-		JsonObject values = jObj.getJsonObject(c.getSimpleName());
+		//JsonObject values = jObj.getJsonObject(c.getSimpleName());
+		
 		for(Field field : object.getClass().getDeclaredFields())
 		{
-				String name = field.getName();
-				if(values.containsKey(name))
+				String fieldName = field.getName();
+				if(jObj.containsKey(fieldName))
 				{
-					
-				}
-				
-				if(Modifier.isPublic(field.getModifiers()))//direct access to the field value
-				{
-					try
-					{
-						field.set(object);
-					}
-					catch (IllegalArgumentException | IllegalAccessException e)
-					{//should not happen as we tested for public
-						e.printStackTrace();
-					}
-				}
-				else//we need to use a getter
-				{
-					String upperName = name.substring(0, 1).toUpperCase()+name.substring(1, name.length());
-				
-					String[] possibleMethodNames = {"get"+upperName, "is"+upperName, "has"+upperName};
-					Method method = null;
-					for(String nameTested : possibleMethodNames)
+					Object fieldValue = fromJsonValue(jObj.get(fieldName), field);
+					if(Modifier.isPublic(field.getModifiers()))//direct access to the field value
 					{
 						try
 						{
-							method = object.getClass().getMethod(nameTested, (Class[]) null);
+							field.set(object, fieldValue);
 						}
-						catch (NoSuchMethodException | SecurityException e)
-						{
-							continue;
+						catch (IllegalArgumentException | IllegalAccessException e)
+						{//should not happen as we tested for public
+							e.printStackTrace();
 						}
-						break;
 					}
-					if(method == null)
+					else//we need to fond and use a setter
 					{
-						throw new EZJNoFieldAccess(object.getClass(), name);
-					}
+						String upperName = fieldName.substring(0, 1).toUpperCase()+fieldName.substring(1, fieldName.length());
 					
-					try
-					{
-						value = method.invoke(object, (Object[]) null);
+						String[] possibleMethodNames = {"set"+upperName, fieldName};
+						//we may have lost the primitive type to its wrapper counterpart. Retrieving it.
+						Class[] possibleTypes;
+						if(WRAPPER_TYPE_MAP.containsKey(field.getType()))
+						{
+							possibleTypes = new Class[] {field.getType(), WRAPPER_TYPE_MAP.get(field.getType())};
+						}
+						else
+						{
+							possibleTypes = new Class[] {field.getType()};
+						}
+						//fieldValue.getClass().
+						
+						Method method = null;
+						for(String nameTested : possibleMethodNames)
+						{
+							for (Class paramTypeTested : possibleTypes)
+							{
+								//System.out.println(nameTested + " " + paramTypeTested.getCanonicalName());
+								try
+								{
+									method = object.getClass().getMethod(nameTested, new Class[] {paramTypeTested});
+								}
+								catch (NoSuchMethodException | SecurityException e)
+								{
+									continue;
+								}
+								break;
+							}
+							if(method != null)
+							{
+								break;
+							}
+						}
+						if(method == null)
+						{
+							throw new EZJNoFieldWriteAccess(object.getClass(), fieldName);
+						}
+						
+						try
+						{
+							method.invoke(object, new Object[] {fieldValue});
+						}
+						catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e)
+						{
+							//Yeah i don't know
+							e.printStackTrace();
+						}
 					}
-					catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e)
-					{
-						//Yeah i don't know
-						e.printStackTrace();
-					}
-				}
-				job.add(name, toJsonValue(value));
-				
+				}	
 		}
 		
 		
@@ -319,12 +407,18 @@ public class EZJ
 		return job.build().get(name);
 	}
 	
+	static public Object fromJsonValue(JsonValue value, Field field) throws EZJException
+	{
+		return fromJsonValue(value, field, field.getType());
+	}
+	
+	static public Object fromJsonValue(JsonValue value, Class type) throws EZJException
+	{
+		return fromJsonValue(value, null, type);
+	}
+	
 	static public Object fromJsonValue(JsonValue value, Field field, Class type) throws EZJException
 	{
-		if(field == null)
-		{
-			
-		}
 		if(value.equals(JsonValue.NULL))
 		{
 			return null;
@@ -337,78 +431,117 @@ public class EZJ
 		{
 			return true;
 		}
-		else if(IEZJSerializable.class.isAssignableFrom(field.getType()))
+		else if(IEZJSerializable.class.isAssignableFrom(type))
 		{
 			if(value.getValueType() == ValueType.OBJECT)
 			{
-				return deserialize((JsonObject) value, field.getType());
+				return deserializeToObject((JsonObject) value, type);
 			}
-			throw new EZJDeserilizationError(value, field.getType());
+			throw new EZJDeserilizationError(value, type);
 			
 		}
-		else if(Iterable.class.isAssignableFrom(field.getType()))
+		else if(Iterable.class.isAssignableFrom(type))
 		{
-			if(value.getValueType() == ValueType.ARRAY)
+			if(value.getValueType() == ValueType.ARRAY && field != null)
 			{
-				return deserializeIterable((JsonArray) value, field.getType());
+				return deserializeToCollection((JsonArray) value, field);
 			}
-			throw new EZJDeserilizationError(value, field.getType());
+			throw new EZJDeserilizationError(value, type);
 		}
-		else if(value.getClass().isArray())
+		else if(type.isArray())
 		{
-			job.add(name, serializeInner((Object[]) value));
+			if(value.getValueType() == ValueType.ARRAY && field != null)
+			{
+				return deserializeToArray((JsonArray) value, field);
+			}
+			throw new EZJDeserilizationError(value, type);
 		}
-		else if(value instanceof BigInteger)
+		else if(BigInteger.class.isAssignableFrom(type))
 		{
-			job.add(name, (BigInteger) value);
+			if(value.getValueType() == ValueType.NUMBER)
+			{
+				return ((JsonNumber) value).bigIntegerValueExact();
+			}
+			throw new EZJDeserilizationError(value, type);
 		}
-		else if(value instanceof BigDecimal)
+		else if(BigDecimal.class.isAssignableFrom(type))
 		{
-			job.add(name, (BigDecimal) value);
+			if(value.getValueType() == ValueType.NUMBER)
+			{
+				return ((JsonNumber) value).bigDecimalValue();
+			}
+			throw new EZJDeserilizationError(value, type);
 		}
-		else if(value instanceof Long)
+		else if(Long.class.isAssignableFrom(type) || type.equals(Long.TYPE))
 		{
-			job.add(name, (Long) value);
+			if(value.getValueType() == ValueType.NUMBER)
+			{
+				return ((JsonNumber) value).longValueExact();
+			}
+			throw new EZJDeserilizationError(value, type);
 		}
-		else if(isDecimal(value))
+		else if(Double.class.isAssignableFrom(type) || type.equals(Double.TYPE))
 		{
-			job.add(name, (Double) value);
+			if(value.getValueType() == ValueType.NUMBER)
+			{
+				return ((JsonNumber) value).doubleValue();
+			}
+			throw new EZJDeserilizationError(value, type);
 		}
-		else if(isInteger(value))
+		else if(Float.class.isAssignableFrom(type) || type.equals(Float.TYPE))
 		{
-			job.add(name, (Integer) value);
+			if(value.getValueType() == ValueType.NUMBER)
+			{
+				return (float) ((JsonNumber) value).doubleValue();
+			}
+			throw new EZJDeserilizationError(value, type);
 		}
-		else if(value instanceof Boolean)
+		else if(Integer.class.isAssignableFrom(type) || type.equals(Integer.TYPE))
 		{
-			job.add(name, (Boolean) value);
+			if(value.getValueType() == ValueType.NUMBER)
+			{
+				return ((JsonNumber) value).intValueExact();
+			}
+			throw new EZJDeserilizationError(value, type);
 		}
-		else if(value instanceof Enum)
+		else if(Short.class.isAssignableFrom(type) || type.equals(Short.TYPE))
 		{
-			job.add(name, ((Enum) value).name());
+			if(value.getValueType() == ValueType.NUMBER)
+			{
+				return (short) ((JsonNumber) value).intValueExact();
+			}
+			throw new EZJDeserilizationError(value, type);
 		}
-		else if(customSerializers.containsKey(value.getClass()))
+		else if(Byte.class.isAssignableFrom(type) || type.equals(Byte.TYPE))
 		{
-			job.add(name, customSerializers.get(value.getClass()).serialize(value));
+			if(value.getValueType() == ValueType.NUMBER)
+			{
+				return (byte) ((JsonNumber) value).intValueExact();
+			}
+			throw new EZJDeserilizationError(value, type);
+		}
+		else if(Enum.class.isAssignableFrom(type))
+		{
+			if(value.getValueType() == ValueType.STRING)
+			{
+				return Enum.valueOf(type, ((JsonString) value).getString());
+			}
+			throw new EZJDeserilizationError(value, type);
+		}
+		else if(customSerializers.containsKey(type))
+		{
+			return customSerializers.get(type).deserialize(value);
 		}
 		else
 		{
-			String internal = value.getClass().getName() + "@"+Integer.toHexString(value.hashCode());
-			String toString = value.toString();
-			
-			if(!internal.equals(toString))//check if toString is implemented
+			if(value.getValueType() == ValueType.STRING)
 			{
-				job.add(name, toString);
+				return ((JsonString) value).getString();
 			}
-			else
-			{
-				throw new EZJNotSerializable(value);
-			}
+			throw new EZJNotDeserializable(type, value);
 		}
-		
-		
-		return job.build().get(name);
 	}
-	
+
 
 	static public boolean isDecimal(Object o)
 	{
@@ -421,12 +554,5 @@ public class EZJ
 		return o instanceof Integer ||
 				o instanceof Byte ||
 				o instanceof Short;
-	}
-	
-	private final class __<T> // generic helper class which does only provide type information
-	{
-	    private __()
-	    {
-	    }
 	}
 }

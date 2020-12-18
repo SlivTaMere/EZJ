@@ -11,7 +11,6 @@ import java.util.List;
 
 import javax.json.JsonArray;
 
-import com.googlecode.genericdao.dao.DAOUtil;
 
 import ezj.exception.EZJException;
 import ezj.exception.EZJNotSerializable;
@@ -53,9 +52,22 @@ public class Main
 		//System.out.println();
 		System.out.println(Object.class.getMethod("toString", null).invoke(o, null));*/
 		//System.out.println(c.getBody().getType() instanceof Enum);
-		ParameterizedType tp = (ParameterizedType) c.getInterior().getClass().getDeclaredField("seats").getGenericType();
+		/*ParameterizedType tp = (ParameterizedType) c.getInterior().getClass().getDeclaredField("seats").getGenericType();
 		System.out.println((Class) tp.getActualTypeArguments()[0]);
-		System.out.println(Collection.class.isAssignableFrom(c.getInterior().getClass().getDeclaredField("seats").getType()));
+		System.out.println(Collection.class.isAssignableFrom(c.getInterior().getClass().getDeclaredField("seats").getType()));*/
+		/*System.out.println(c.getWheels().getClass().isArray());
+		System.out.println(c.getWheels().getClass().getComponentType());
+		
+		Object[] newArray = c.getWheels().getClass().newInstance();
+		System.out.println(newArray.length);*/
+		
+		//System.out.println(Enum.class.isAssignableFrom(c.getBody().getType().getClass()));
+		//System.out.println(Double.class.isAssignableFrom(Double.TYPE));
+		double ca = 20.1;
+		Object o = ca;
+		System.out.println(int.class.equals(Integer.TYPE));
+		System.out.println(c.engine.getClass().getMethod("setDisplacement", new Class[]{Double.TYPE}));
+		
 	}
 	
 	static public <T> Collection<T> deserializeCollection(Class<Collection<T>> fieldType) throws InstantiationException, IllegalAccessException
