@@ -52,6 +52,11 @@ public class EZJ
 	
 	static private HashMap<Class, IEZJCustomSerializer> customSerializers = new HashMap<Class, IEZJCustomSerializer>();
 	
+	/**
+	 * Add a custom (de)serializer for the given class
+	 * @param serial Implementation of IEZJCustomSerializer that handles (de)serilization for the class c
+	 * @param c The class for which to use the custom serializer
+	 */
 	static public void addCustomSerializer(IEZJCustomSerializer serial, Class c)
 	{
 		customSerializers.put(c, serial);
@@ -114,6 +119,16 @@ public class EZJ
 	
 	static private JsonObject serializeInner(Object object) throws EZJException
 	{
+		if(customSerializers.containsKey(object.getClass()))
+		{
+			JsonValue obj = customSerializers.get(object.getClass()).serialize(object);
+			if(obj.getValueType() != ValueType.OBJECT)
+			{
+				throw new EZJException(customSerializers.get(object.getClass()).getClass().getCanonicalName()+" serilize method should return a JsonObject.");
+			}
+			return (JsonObject) obj;
+		}
+		
 		JsonObjectBuilder job = Json.createObjectBuilder();
 		for(Field field : object.getClass().getDeclaredFields())
 		{
@@ -242,8 +257,42 @@ public class EZJ
 		throw new EZJNotDeserializable(c, jObj);
 	}
 	
+	static public <T> void deserializeToCollection(JsonArray jArr, Class<T> collectionElementsType, Collection<T> receiver) throws EZJException
+	{
+		for(JsonValue jv : jArr)
+		{
+			if(jv.getValueType() == ValueType.OBJECT && ((JsonObject) jv).containsKey(collectionElementsType.getSimpleName()))
+			{
+				receiver.add(deserialize((JsonObject) jv, collectionElementsType));
+			}
+			else
+			{
+				receiver.add((T) fromJsonValue(jv, collectionElementsType));
+			}
+			
+		}
+	}
+	
+	static public <T> T[] deserializeToArray(JsonArray jArr, Class<T> elementsType) throws EZJException
+	{
+		T[] array = (T[]) Array.newInstance(elementsType, jArr.size());
+		int i = 0;
+		for(JsonValue jv : jArr)
+		{
+			array[i]=(T) fromJsonValue(jv, elementsType);
+			i++;
+		}
+		return array;
+	}
+	
 	static private <T> T deserializeToObject(JsonObject jObj, Class<T> c) throws EZJException
 	{
+		
+		if(customSerializers.containsKey(c))
+		{
+			return (T) customSerializers.get(c).deserialize(jObj);
+		}
+		
 		T object = null;
 		try
 		{
